@@ -8,8 +8,9 @@ final class NFCSession: NSObject, ObservableObject {
     private var session: NFCNDEFReaderSession!
     private var isWriting = false
     private var ndefMessage: NFCNDEFMessage!
-    private var writeHandler: ((Error?) -> Void)?
-    private var readHandler: ((String?, Error?) -> Void)?
+    var writeHandler: ((Error?) -> Void)?
+    var readHandler: ((String?, Error?) -> Void)?
+    static let shared = NFCSession()
 
 
     // 書き込みのセッションをスタートする
@@ -24,7 +25,7 @@ final class NFCSession: NSObject, ObservableObject {
             identifier: Data(),
             payload: text.data(using: .utf8)!)
         // Payloadの設定
-        let uriPayload = NFCNDEFPayload.wellKnownTypeURIPayload(url: .init(string: "https://music.line.me/app-bridge?target=track&item=mb0000000002d52160&subitem=mt000000001a8df21b&cc=JP")!)
+        let uriPayload = NFCNDEFPayload.wellKnownTypeURIPayload(url: .init(string: "https://music.line.me/app-bridge?target=track&item=mb00000000038a43e8&subitem=mt000000001ea53b13&cc=JP")!)
         ndefMessage = NFCNDEFMessage(records: [textPayload, uriPayload!])
         startSession()
     }
@@ -32,6 +33,7 @@ final class NFCSession: NSObject, ObservableObject {
     // 読み込みのセッション開始
     func startReadSession(readHandler: ((String?, Error?) -> Void)?) {
         self.readHandler = readHandler
+        print(readHandler)
         isWriting = false
         startSession()
     }
@@ -129,7 +131,7 @@ struct ContentView: View {
     @State private var isAlertShown = false
     @State private var alertMessage = ""
     @State private var text = ""
-    @StateObject private var session = NFCSession()
+    @StateObject private var session = NFCSession.shared
     var body: some View {
         VStack(spacing: 16) {
             TextField("何か入力", text: $text)
@@ -138,6 +140,7 @@ struct ContentView: View {
                 session.startReadSession { text, error in
                     if let error = error {
                         alertMessage = error.localizedDescription
+                        print("error")
                     } else {
                         if let text = text {
                             var filterString = text.filter{ $0 != "\n" }
@@ -177,14 +180,33 @@ struct ContentView: View {
 }
 
 struct OpenNFCReader: AppIntent {
-    static let title: LocalizedStringResource = "NFCリーダーを表示"
+    static let title: LocalizedStringResource = "音楽NFC"
     static let openAppWhenRun: Bool = true
-    private var readHandler: ((String?, Error?) -> Void)?
-    let nfcSession = NFCSession()
-
+    let nfcSession = NFCSession.shared
+    let readHandler = NFCSession.shared.readHandler
     @MainActor
     func perform() async throws -> some IntentResult {
-        nfcSession.startReadSession(readHandler: readHandler)
+        nfcSession.startReadSession(readHandler: { text, error in
+            if let error = error {
+                print("error")
+            } else {
+                if let text = text {
+                    var filterString = text.filter{ $0 != "\n" }
+
+                    if let url = URL(string: filterString), UIApplication.shared.canOpenURL(url) {
+                        UIApplication.shared.open(url, options: [:]) { success in
+                            if success {
+                                print("URLを開きました。")
+                            } else {
+                                print("URLを開くことができませんでした。")
+                            }
+                        }
+                    } else {
+                        print("無効なURLです。")
+                    }
+                }
+            }
+        })
         return .result()
     }
 }
